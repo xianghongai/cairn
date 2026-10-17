@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/xianghongai/cairn/main/cairn-manifest.schema.json",
+  "title": "Cairn 清单",
+  "description": "cairn pull 使用的清单：列出从私有 Gist 拉取的条目及其写入位置与策略。",
+  "type": "object",
+  "required": ["entries"],
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "type": "object",
+      "description": "条目的集合：键为条目名（用于 cairn pull 按名字选择），值为条目对象。",
+      "additionalProperties": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["remote", "path", "strategy"],
+      "additionalProperties": false,
+      "properties": {
+        "remote": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Gist 中的文件名。"
+        },
+        "path": {
+          "description": "目标路径。字符串时适用于所有平台；对象时，当前平台的键优先，没有则用 default，两者都没有则该条目不适用于此平台，执行时跳过。路径以 / 书写，~ 表示用户 Home。",
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "anyOf": [{ "required": ["default"] }, { "required": ["linux"] }, { "required": ["macos"] }],
+              "properties": {
+                "default": { "type": "string", "minLength": 1, "description": "各平台的缺省路径，当前平台没有对应键时使用。" },
+                "linux": { "type": "string", "minLength": 1, "description": "Linux 上的目标路径，覆盖 default。" },
+                "macos": { "type": "string", "minLength": 1, "description": "macOS 上的目标路径，覆盖 default。" },
+                "windows": { "type": "string", "minLength": 1, "description": "保留字段，运行时暂不支持 Windows。" }
+              }
+            }
+          ]
+        },
+        "strategy": {
+          "type": "string",
+          "enum": ["replace", "merge"],
+          "description": "replace 整文件写入；merge 按格式深度合并进已有文件。"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["json", "jsonc", "yaml", "toml"],
+          "description": "文件格式，取值存在时必须为其中之一。merge 条目可省略：省略时由 remote 的后缀推断（.json→json，.jsonc→jsonc，.yaml/.yml→yaml，.toml→toml），推断不出则运行时报错。推断只在运行时进行，Schema 无法表达。replace 条目不需要。"
+        },
+        "rules": {
+          "type": "object",
+          "description": "合并规则，仅对 merge 有效，replace 条目不得声明。arrays 管数组，取 replace、override 或 append；objects 管对象，取 replace 或 override。replace：本地该位置整体被远程替换，本地独有的键或项被删除。override：保留本地内容再叠加远程，对象按键叠加，数组按值叠加并去重（保留本地项及其顺序，追加远程新增的项，相同的值只保留一份）。append（仅数组）：本地数组后接远程数组，不比较值、不去重，每次执行都会再追加一遍。",
+          "additionalProperties": false,
+          "properties": {
+            "arrays": { "$ref": "#/$defs/array_rule", "description": "数组的合并规则，default 缺省为 replace。" },
+            "objects": { "$ref": "#/$defs/object_rule", "description": "对象的合并规则，default 缺省为 override。" }
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "可选备注。"
+        }
+      },
+      "if": {
+        "properties": { "strategy": { "const": "merge" } },
+        "required": ["strategy"]
+      },
+      "else": {
+        "not": { "required": ["rules"] }
+      }
+    },
+    "array_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": ["replace", "override", "append"],
+          "description": "应用于该类型的所有位置，除非 paths 另有指定。"
+        },
+        "paths": {
+          "type": "object",
+          "description": "键为完整点号路径（如 editor.fontFamilies），值为 replace、override 或 append，优先于 default。只按完整路径精确匹配，不支持通配符；只作用于远程片段中出现的路径。取 override 或 append 的路径不得位于规则为 replace 的上级对象之下（上级整块替换后它不会生效），运行时校验，Schema 无法表达。限制：键名本身不得含点号，因为点号会被当作路径分隔符。",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["replace", "override", "append"]
+          }
+        }
+      }
+    },
+    "object_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": ["replace", "override"],
+          "description": "应用于该类型的所有位置，除非 paths 另有指定。"
+        },
+        "paths": {
+          "type": "object",
+          "description": "键为完整点号路径（如 editor.font），值为 replace 或 override，优先于 default。只按完整路径精确匹配，不支持通配符；只作用于远程片段中出现的路径。取 override 的路径不得位于规则为 replace 的上级对象之下（上级整块替换后它不会生效），运行时校验，Schema 无法表达。限制：键名本身不得含点号，因为点号会被当作路径分隔符。",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["replace", "override"]
+          }
+        }
+      }
+    }
+  }
+}
